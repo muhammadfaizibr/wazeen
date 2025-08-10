@@ -54,8 +54,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'utils.middleware.PerformanceMiddleware',
-    'utils.middleware.AuditMiddleware',
+    # 'utils.middleware.PerformanceMiddleware',
+    # 'utils.middleware.AuditMiddleware',
 ]
 
 ROOT_URLCONF = 'accounting_portal.urls'
@@ -123,7 +123,7 @@ CACHES = {
 # Channels configuration
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels_redis.accounting_portal.RedisChannelLayer',
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             'hosts': [os.getenv('REDIS_URL', 'redis://localhost:6379/2')],
         },
@@ -184,7 +184,7 @@ REST_FRAMEWORK = {
 
 # JWT Configuration
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

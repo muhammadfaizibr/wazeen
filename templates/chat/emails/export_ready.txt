@@ -1,0 +1,23 @@
+Hello {{ user.full_name }},
+
+Your chat export for "{{ room.request.title }}" is ready for download.
+
+Export Details:
+- Chat Room: {{ room.request.title }}
+- Filename: {{ filename }}
+- Export Date: {{ export_date|date:"F j, Y g:i A" }}
+- Expires: {{ export_date|date:"F j, Y"|add_days:7 }}
+
+To download your export file, please log into your account and visit the chat room.
+
+Download URL: {{ download_url }}
+
+Important: This download link will expire in 7 days for security reasons. Please download your file as soon as possible.
+
+If you have any questions or need assistance, please don't hesitate to contact our support team.
+
+Best regards,
+The {{ site_name }} Team
+
+---
+This is an automated message. Please do not reply to this email.

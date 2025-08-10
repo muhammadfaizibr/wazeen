@@ -19,11 +19,12 @@ def send_verification_email_task(user_id, email, token_str, first_name=None, use
             'username': username
         },
         'verification_url': verification_url,
-        'site_name': 'Accounting Portal'
+        'site_name': 'Wazeens'
     }
-
-    html_message = render_to_string('emails/email_verification.html', context)
-
+    
+    # Changed from 'emails/email_verification.html' to:
+    html_message = render_to_string('authentication/emails/email_verification.html', context)
+    
     send_mail(
         subject=subject,
         message='',
@@ -33,23 +34,23 @@ def send_verification_email_task(user_id, email, token_str, first_name=None, use
         fail_silently=False,
     )
 
-
 @shared_task
 def send_password_reset_email_task(user_email, token, first_name=None, username=None):
     subject = 'Reset your password'
     reset_url = f"{settings.FRONTEND_URL}/reset-password/{token}"
-
+    
     context = {
         'user': {
             'first_name': first_name,
             'username': username
         },
         'reset_url': reset_url,
-        'site_name': 'Accounting Portal',
+        'site_name': 'Wazeen',
     }
-
-    html_message = render_to_string('emails/password_reset.html', context)
-
+    
+    # Changed from 'emails/password_reset.html' to:
+    html_message = render_to_string('authentication/emails/password_reset.html', context)
+    
     send_mail(
         subject=subject,
         message='',

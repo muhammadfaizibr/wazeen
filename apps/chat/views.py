@@ -12,6 +12,7 @@ from datetime import timedelta
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import json
+import logging
 
 from apps.service_requests.models import ServiceRequest
 from utils.pagination import StandardResultsSetPagination, SmallResultsSetPagination
@@ -31,6 +32,10 @@ from .serializers import (
 )
 from .filters import ChatMessageFilter
 from .permissions import ChatPermission
+from django.http import HttpResponse, Http404
+from django.core.files.storage import default_storage
+
+logger = logging.getLogger(__name__)
 
 
 class ChatRoomListCreateView(generics.ListCreateAPIView):
@@ -396,17 +401,8 @@ def chat_stats(request, room_id):
         created_at__date=today
     ).count()
     
-    # Calculate average response time (simplified)
-    messages_with_responses = room.messages.filter(
-        is_deleted=False,
-        thread__isnull=False
-    ).annotate(
-        response_time=Avg('thread__reply_message__created_at') - Avg('created_at')
-    ).aggregate(avg_response_time=Avg('response_time'))
-    
-    avg_response_time = 0
-    if messages_with_responses['avg_response_time']:
-        avg_response_time = messages_with_responses['avg_response_time'].total_seconds() / 60
+    # Calculate average response time using the MessageThread model
+    avg_response_time = calculate_avg_response_time(room)
     
     stats = {
         'total_messages': total_messages,
@@ -420,6 +416,30 @@ def chat_stats(request, room_id):
     serializer.is_valid()
     
     return Response(serializer.data)
+
+
+def calculate_avg_response_time(room):
+    """Calculate average response time using MessageThread model"""
+    # Get all message threads for this room
+    threads = MessageThread.objects.filter(
+        parent_message__room=room,
+        parent_message__is_deleted=False,
+        reply_message__is_deleted=False
+    ).select_related('parent_message', 'reply_message')
+    
+    if not threads.exists():
+        return 0
+    
+    response_times = []
+    
+    for thread in threads:
+        # Calculate response time in minutes
+        response_time = (
+            thread.reply_message.created_at - thread.parent_message.created_at
+        ).total_seconds() / 60
+        response_times.append(response_time)
+    
+    return sum(response_times) / len(response_times) if response_times else 0
 
 
 @api_view(['GET'])
@@ -457,19 +477,110 @@ def search_messages(request, room_id):
 @permission_classes([permissions.IsAuthenticated])
 def export_chat(request, room_id):
     """Export chat messages to a file"""
-    room = get_object_or_404(ChatRoom, id=room_id)
+    try:
+        room = get_object_or_404(ChatRoom, id=room_id)
+        
+        if not room.can_user_access(request.user):
+            return Response(
+                {'error': 'You do not have access to this chat room'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get export format from request (default to JSON)
+        export_format = request.data.get('format', 'json').lower()
+        if export_format not in ['json', 'csv', 'txt']:
+            return Response(
+                {'error': 'Invalid export format. Supported formats: json, csv, txt'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get date range filters if provided
+        date_from = request.data.get('date_from')
+        date_to = request.data.get('date_to')
+        
+        # Import the task here to avoid circular imports
+        try:
+            from .tasks import export_chat_messages
+        except ImportError as e:
+            logger.error(f"Failed to import export_chat_messages task: {e}")
+            return Response(
+                {'error': 'Export functionality is currently unavailable'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        
+        # Queue the export task
+        try:
+            task = export_chat_messages.delay(
+                room_id=str(room_id),
+                user_id=request.user.id,
+                export_format=export_format,
+                date_from=date_from,
+                date_to=date_to
+            )
+            
+            logger.info(f"Export task queued for user {request.user.id}, room {room_id}, format {export_format}")
+            
+            return Response({
+                'detail': f'Chat export has been queued. You will receive a notification when ready.',
+                'task_id': task.id,
+                'format': export_format,
+                'room_title': room.request.title
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to queue export task: {e}")
+            return Response(
+                {'error': 'Failed to queue export task. Please try again later.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
-    if not room.can_user_access(request.user):
+    except Exception as e:
+        logger.error(f"Unexpected error in export_chat: {e}")
         return Response(
-            {'error': 'You do not have access to this chat room'},
-            status=status.HTTP_403_FORBIDDEN
+            {'error': 'An unexpected error occurred'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    
-    # This would typically be handled by a background task
-    # For now, return success message
-    return Response({
-        'detail': 'Chat export has been queued. You will receive an email when ready.'
-    })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def download_chat_export(request, file_id):
+    """Download exported chat file"""
+    try:
+        # Verify file belongs to user and exists
+        print(f"Downloading export file: {file_id} for user {request.user.id}")
+        file_path = f'chat_exports/{request.user.id}/{file_id}'
+        
+        if not default_storage.exists(file_path):
+            raise Http404("Export file not found or expired")
+        
+        # Get file content
+        file_content = default_storage.open(file_path).read()
+        
+        # Determine content type based on file extension
+        if file_id.endswith('.json'):
+            content_type = 'application/json'
+        elif file_id.endswith('.csv'):
+            content_type = 'text/csv'
+        elif file_id.endswith('.txt'):
+            content_type = 'text/plain'
+        else:
+            content_type = 'application/octet-stream'
+        
+        response = HttpResponse(file_content, content_type=content_type)
+        response['Content-Disposition'] = f'attachment; filename="{file_id}"'
+        
+        logger.info(f"Export file {file_id} downloaded by user {request.user.id}")
+        return response
+        
+    except Http404:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to download export file {file_id} for user {request.user.id}: {e}")
+        return Response(
+            {'error': 'Failed to download export file'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(['DELETE'])

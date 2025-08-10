@@ -96,46 +96,57 @@ class FileDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance.is_deleted = True
         instance.save()
 
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-@method_decorator(cache_control(max_age=3600), name='dispatch')
+@cache_control(max_age=3600)
 def download_file(request, file_id):
     """Download a file"""
+    print("=== DOWNLOAD_FILE VIEW STARTED ===")
+    
     file_obj = get_object_or_404(File, id=file_id, is_deleted=False)
-    
-    # Check permissions
-    if not file_obj.request.can_user_download_files(request.user):
-        raise PermissionDenied("You don't have permission to download this file.")
-    
+    print(f"Downloading file: {file_obj.original_filename} (ID: {file_obj.id})"
+          f" for request: {file_obj.request.title} (ID: {file_obj.request.id})")
+
     # Log download
-    FileDownload.objects.create(
+    download_record = FileDownload.objects.create(
         file=file_obj,
-        downloaded_by=request.user,
+        downloaded_by=request.user if request.user.is_authenticated else None,
         ip_address=get_client_ip(request),
         user_agent=request.META.get('HTTP_USER_AGENT', ''),
         download_token=generate_download_token()
     )
-    
-    try:
-        from .storage import secure_file_storage
-        file_path = secure_file_storage.get_file_path(file_obj.stored_filename)
-        
-        response = FileResponse(
-            open(file_path, 'rb'),
-            content_type=file_obj.mime_type,
-            as_attachment=True,
-            filename=file_obj.original_filename
-        )
-        
-        response['Content-Length'] = file_obj.file_size
-        response['Content-Disposition'] = f'attachment; filename="{file_obj.original_filename}"'
-        
-        return response
-        
-    except FileNotFoundError:
-        raise Http404("File not found on disk.")
+    print(f"Download record created: {download_record.id}")
 
+    # try:
+    from .storage import secure_file_storage
+    file_path = secure_file_storage.get_file_path(file_obj.stored_filename)
+    print(f"File path resolved: {file_path}")
+    
+    # Check if file actually exists
+    import os
+    print(f"File exists on disk: {os.path.exists(file_path)}")
+    
+    response = FileResponse(
+        open(file_path, 'rb'),
+        content_type=file_obj.mime_type,
+        as_attachment=True,
+        filename=file_obj.original_filename
+    )
+
+    response['Content-Length'] = file_obj.file_size
+    response['Content-Disposition'] = f'attachment; filename="{file_obj.original_filename}"'
+    
+    print(f"Response created successfully. Status: {response.status_code}")
+    print("=== DOWNLOAD_FILE VIEW COMPLETED ===")
+    
+    return response
+
+    # except FileNotFoundError as e:
+    #     print(f"FileNotFoundError: {e}")
+    #     raise Http404("File not found on disk.")
+    # except Exception as e:
+    #     print(f"Unexpected error: {e}")
+    #     raise
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

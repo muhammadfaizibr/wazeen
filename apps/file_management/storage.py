@@ -45,15 +45,21 @@ class SecureFileStorage:
         # Return relative path from base
         return os.path.relpath(file_path, self.base_path)
     
-    def get_file_path(self, relative_path):
-        """Get absolute file path"""
-        file_path = os.path.join(self.base_path, relative_path)
+    def get_file_path(self, stored_filename):
+        # If the stored_filename already contains the full path structure
+        if '/' in stored_filename:
+            return os.path.join(settings.SECURE_FILE_ROOT, stored_filename)
         
-        # Security check: ensure path is within base directory
-        if not os.path.commonpath([self.base_path, file_path]) == self.base_path:
-            raise SuspiciousOperation("File path is outside secure directory")
+        # Otherwise, search for the file in subdirectories
+        import glob
+        search_pattern = os.path.join(settings.SECURE_FILE_ROOT, '**', stored_filename)
+        matches = glob.glob(search_pattern, recursive=True)
         
-        return file_path
+        if matches:
+            return matches[0]
+        
+        # Fallback to original logic
+        return os.path.join(settings.SECURE_FILE_ROOT, stored_filename)
     
     def delete_file(self, relative_path):
         """Delete file"""

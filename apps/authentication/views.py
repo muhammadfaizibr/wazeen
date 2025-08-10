@@ -229,7 +229,7 @@ def resend_verification_email(request):
     context = {
         'user': user,
         'verification_url': verification_url,
-        'site_name': 'Accounting Portal'
+        'site_name': 'Wazeen'
     }
     
     html_message = render_to_string('emails/email_verification.html', context)

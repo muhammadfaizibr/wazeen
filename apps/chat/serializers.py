@@ -394,3 +394,30 @@ class ChatStatsSerializer(serializers.Serializer):
     active_participants = serializers.IntegerField()
     messages_today = serializers.IntegerField()
     average_response_time = serializers.FloatField()  # in minutes
+
+
+class ChatMessageExportSerializer(serializers.ModelSerializer):
+    """Serializer for exporting chat messages"""
+    sender_name = serializers.CharField(source='sender.full_name', read_only=True)
+    sender_role = serializers.CharField(source='sender.role', read_only=True)
+    file_name = serializers.CharField(source='file.filename', read_only=True)
+    file_url = serializers.CharField(source='file.file.url', read_only=True)
+    reactions = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ChatMessage
+        fields = [
+            'id', 'message_type', 'content', 'sender_name', 'sender_role',
+            'file_name', 'file_url', 'is_edited', 'created_at', 'updated_at',
+            'reactions'
+        ]
+    
+    def get_reactions(self, obj):
+        return [
+            {
+                'emoji': reaction.emoji,
+                'user_name': reaction.user.full_name,
+                'created_at': reaction.created_at.isoformat()
+            }
+            for reaction in obj.reactions.all()
+        ]

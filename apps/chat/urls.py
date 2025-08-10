@@ -35,6 +35,8 @@ urlpatterns = [
     
     # Export chat
     path('rooms/<uuid:room_id>/export/', views.export_chat, name='export-chat'),
+    path('export/download/<str:file_id>/', views.download_chat_export, name='download_chat_export'),
+
     
     # Clear chat history (admin only)
     path('rooms/<uuid:room_id>/clear/', views.clear_chat_history, name='clear-chat'),
@@ -82,4 +84,4 @@ WebSocket Endpoints:
 """
 
 
-# Main project urls.py integration
+# Main project urls.py integrations
